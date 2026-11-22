@@ -11,6 +11,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarCloud нужна полная история для blame/нового кода
 
       - uses: actions/setup-go@v5
         with:
@@ -24,4 +26,12 @@ jobs:
         run: go tool golangci-lint run
 
       - name: Test
-        run: go test -race -v ./...
+        run: go test -race -v -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.go.coverage.reportPaths=coverage.out

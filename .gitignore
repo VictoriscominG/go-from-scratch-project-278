@@ -8,6 +8,7 @@ link-shortener
 *.dll
 *.so
 *.dylib
+coverage.out
 
 # Локальное окружение (секреты: DATABASE_URL, SENTRY_DSN)
 .env
