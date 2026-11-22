@@ -20,6 +20,8 @@ const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 // shortNameLength — длина генерируемого короткого имени.
 const shortNameLength = 6
 
+const errInternal = "internal error"
+
 // createLinkRequest — тело запроса POST /api/links.
 type createLinkRequest struct {
 	OriginalURL string `json:"original_url"`
@@ -67,7 +69,7 @@ func (h *Handlers) CreateLink(c *gin.Context) {
 	if shortName == "" {
 		sn, err := generateShortName(shortNameLength)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 			return
 		}
 		shortName = sn
@@ -79,7 +81,7 @@ func (h *Handlers) CreateLink(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
 
@@ -103,7 +105,7 @@ func (h *Handlers) Redirect(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
 

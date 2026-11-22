@@ -22,6 +22,10 @@ FROM alpine:3.22
 
 WORKDIR /app
 
+# Непривилегированный пользователь: приложение не должно работать от root
+RUN addgroup -S app && adduser -S -G app app
+RUN chown -R app:app /app
+
 COPY --from=backend-builder /build/app /app/bin/app
 
 COPY --from=backend-builder build/code/db/migrations /app/db/migrations
@@ -29,6 +33,8 @@ COPY --from=backend-builder /build/goose /usr/local/bin/goose
 
 COPY bin/run.sh /app/bin/run.sh
 RUN chmod +x /app/bin/run.sh
+
+USER app
 
 EXPOSE 8080
 
