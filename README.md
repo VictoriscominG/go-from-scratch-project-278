@@ -1,8 +1,6 @@
 # Сокращатель ссылок (Go)
 
-[![hexlet-check](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions)
-
-[![CI](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml)
+[![hexlet-check](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions) [![CI](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=VictoriscominG_go-from-scratch-project-278&metric=coverage)](https://sonarcloud.io/summary/new_code?id=VictoriscominG_go-from-scratch-project-278)
 
 Спроектируйте приложение для удобных ссылок
 

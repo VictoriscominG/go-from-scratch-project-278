@@ -1,4 +1,4 @@
-.PHONY: run dev build clean tidy
+.PHONY: run dev build clean tidy lint lint-fix test ci migrate
 
 run: # Запускает приложение через go run.
 	go run main.go
@@ -16,13 +16,16 @@ tidy: # Приводит в порядок go.mod и go.sum.
 	go mod tidy
 
 lint: # Запускает линтер для проверки кода
-	golangci-lint run
+	go tool golangci-lint run
 
 lint-fix: # Автоматически исправляет ошибки, которые может исправить линтер
-	golangci-lint run --fix
+	go tool golangci-lint run --fix
 
 test: # Запускает тест server.go
 	go test ./... -race
 
 ci: # Запускает все тесты
 	lint test
+
+migrate: # Применяет миграции к базе из переменной DATABASE_URL.
+	go tool goose -dir ./db/migrations postgres "$(DATABASE_URL)" up

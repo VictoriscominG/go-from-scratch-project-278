@@ -9,8 +9,21 @@ link-shortener
 *.so
 *.dylib
 
+# Локальное окружение (секреты: DATABASE_URL, SENTRY_DSN)
+.env
+.env.local
+.env.*.local
+
+# Docker (локальные файлы разработки, не основной Dockerfile)
+docker-compose.override.yml
+Dockerfile.dev
+
 # IDE
 .idea/
 *.iml
 .vscode/
 .golangci.bck.yml
+
+# Системные файлы
+.DS_Store
+

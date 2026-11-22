@@ -1,14 +1,36 @@
 package server
 
-import "github.com/gin-gonic/gin"
+import (
+	"errors"
+	"net/http"
+	"os"
 
-func New() *gin.Engine {
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
+	"github.com/gin-gonic/gin"
+
+	"link-shortener/internal/handlers"
+	"link-shortener/internal/storage"
+)
+
+func New(store storage.Store) *gin.Engine {
 	router := gin.New()
+
+	router.Use(sentrygin.New(sentrygin.Options{}))
 	router.Use(gin.Logger(), gin.Recovery())
 
 	router.GET("/ping", func(c *gin.Context) {
-		c.String(200, "pong")
+		c.String(http.StatusOK, "pong")
 	})
+
+	if os.Getenv("SENTRY_DEBUG") == "on" {
+		router.GET("/debug/sentry", func(c *gin.Context) {
+			sentry.CaptureException(errors.New("test error from link-shortener"))
+			c.String(http.StatusOK, "sent")
+		})
+	}
+
+	handlers.New(store).Register(router)
 
 	return router
 }
