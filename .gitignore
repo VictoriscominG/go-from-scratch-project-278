@@ -1,0 +1,15 @@
+# Air
+.air-cache/
+
+# Временные и сборочные файлы
+tmp/
+link-shortener
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE
+.idea/
+*.iml
+.vscode/
