@@ -14,3 +14,15 @@ clean: # Удаляет собранный бинарный файл.
 
 tidy: # Приводит в порядок go.mod и go.sum.
 	go mod tidy
+
+lint: # Запускает линтер для проверки кода
+	golangci-lint run
+
+lint-fix: # Автоматически исправляет ошибки, которые может исправить линтер
+	golangci-lint run --fix
+
+test: # Запускает тест server.go
+	go test ./... -race
+
+ci: # Запускает все тесты
+	lint test
