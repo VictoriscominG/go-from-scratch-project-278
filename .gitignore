@@ -13,3 +13,4 @@ link-shortener
 .idea/
 *.iml
 .vscode/
+.golangci.bck.yml
