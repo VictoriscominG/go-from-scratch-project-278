@@ -2,6 +2,17 @@
 
 [![hexlet-check](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions) [![CI](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml/badge.svg)](https://github.com/VictoriscominG/go-from-scratch-project-278/actions/workflows/ci.yml) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=VictoriscominG_go-from-scratch-project-278&metric=coverage)](https://sonarcloud.io/summary/new_code?id=VictoriscominG_go-from-scratch-project-278)
 
+
+## 🚀 Запущенное приложение
+
+Приложение развернуто на Render:  
+👉 [go-from-scratch-project-278-0b05.onrender.com](https://go-from-scratch-project-278-0b05.onrender.com)
+
+Доступные эндпоинты:
+- `GET /ping` — проверка доступности (ожидается `pong`)
+- `GET /debug/sentry` — тестовая отправка ошибки в Sentry (работает только при `SENTRY_DEBUG=on`)
+
+
 Спроектируйте приложение для удобных ссылок
 
 Учебный проект Хекслета: https://ru.hexlet.io/programs/go-from-scratch
