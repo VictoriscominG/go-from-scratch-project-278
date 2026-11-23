@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
@@ -26,6 +27,7 @@ func New(store storage.Store) *gin.Engine {
 	if os.Getenv("SENTRY_DEBUG") == "on" {
 		router.GET("/debug/sentry", func(c *gin.Context) {
 			sentry.CaptureException(errors.New("test error from link-shortener"))
+			sentry.Flush(3 * time.Second)
 			c.String(http.StatusOK, "sent")
 		})
 	}
