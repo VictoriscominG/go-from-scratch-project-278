@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,48 +16,65 @@ import (
 	"link-shortener/internal/storage"
 )
 
-// alphabet — символы для генерации коротких имён (base62).
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-// shortNameLength — длина генерируемого короткого имени.
 const shortNameLength = 6
-
 const errInternal = "internal error"
 
-// createLinkRequest — тело запроса POST /api/links.
+type Handlers struct {
+	store   storage.Store
+	baseURL string
+}
+
+func New(store storage.Store, baseURL string) *Handlers {
+	return &Handlers{store: store, baseURL: strings.TrimRight(baseURL, "/")}
+}
+
+func (h *Handlers) Register(r *gin.Engine) {
+	r.POST("/api/links", h.CreateLink)
+	r.GET("/api/links", h.ListLinks)
+	r.GET("/api/links/:id", h.GetLink)
+	r.PUT("/api/links/:id", h.UpdateLink)
+	r.DELETE("/api/links/:id", h.DeleteLink)
+	r.GET("/r/:short_name", h.Redirect)
+}
+
+// linkResponse — формат ответа API с полем short_url.
+type linkResponse struct {
+	ID          int64     `json:"id"`
+	OriginalURL string    `json:"original_url"`
+	ShortName   string    `json:"short_name"`
+	ShortURL    string    `json:"short_url"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (h *Handlers) respond(link *storage.Link) linkResponse {
+	return linkResponse{
+		ID:          link.ID,
+		OriginalURL: link.OriginalURL,
+		ShortName:   link.ShortName,
+		ShortURL:    h.baseURL + "/r/" + link.ShortName,
+		CreatedAt:   link.CreatedAt,
+	}
+}
+
+func (h *Handlers) respondList(links []storage.Link) []linkResponse {
+	out := make([]linkResponse, 0, len(links))
+	for i := range links {
+		out = append(out, h.respond(&links[i]))
+	}
+	return out
+}
+
 type createLinkRequest struct {
 	OriginalURL string `json:"original_url"`
 	ShortName   string `json:"short_name"`
 }
 
-// Handlers хранит зависимости хендлеров.
-type Handlers struct {
-	store storage.Store
-}
-
-// New собирает Handlers с хранилищем.
-func New(store storage.Store) *Handlers {
-	return &Handlers{store: store}
-}
-
-// Register регистрирует маршруты API.
-func (h *Handlers) Register(r *gin.Engine) {
-	r.POST("/api/links", h.CreateLink)
-	r.GET("/:short_name", h.Redirect)
-}
-
 // CreateLink — POST /api/links.
-// Принимает JSON с original_url (обязательно) и short_name (опционально,
-// если не задан — генерируется случайно). Возвращает созданную ссылку.
 func (h *Handlers) CreateLink(c *gin.Context) {
 	var req createLinkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
-		return
-	}
-
-	if req.OriginalURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "original_url is required"})
 		return
 	}
 
@@ -85,21 +104,27 @@ func (h *Handlers) CreateLink(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"id":           link.ID,
-		"original_url": link.OriginalURL,
-		"short_name":   link.ShortName,
-		"created_at":   link.CreatedAt,
-	})
+	c.JSON(http.StatusCreated, h.respond(link))
 }
 
-// Redirect — GET /:short_name.
-// Ищет ссылку по короткому имени и перенаправляет на оригинальный адрес.
-// Визит записывается асинхронно, чтобы не замедлять редирект.
-func (h *Handlers) Redirect(c *gin.Context) {
-	shortName := c.Param("short_name")
+// ListLinks — GET /api/links.
+func (h *Handlers) ListLinks(c *gin.Context) {
+	links, err := h.store.ListLinks(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+	c.JSON(http.StatusOK, h.respondList(links))
+}
 
-	link, err := h.store.GetLinkByShortName(c.Request.Context(), shortName)
+// GetLink — GET /api/links/:id.
+func (h *Handlers) GetLink(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+
+	link, err := h.store.GetLinkByID(c.Request.Context(), id)
 	if errors.Is(err, storage.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
 		return
@@ -109,18 +134,93 @@ func (h *Handlers) Redirect(c *gin.Context) {
 		return
 	}
 
-	// Пишем визит в горутине: редирект не должен ждать запись в БД.
-	go func(linkID int64) {
+	c.JSON(http.StatusOK, h.respond(link))
+}
+
+// UpdateLink — PUT /api/links/:id.
+// original_url обязателен; short_name можно не передавать — тогда он не меняется.
+func (h *Handlers) UpdateLink(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+
+	var req createLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	u, err := url.Parse(req.OriginalURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
+		return
+	}
+
+	link, err := h.store.UpdateLink(c.Request.Context(), id,
+		req.OriginalURL, storage.OptionalString{Value: req.ShortName, Set: req.ShortName != ""})
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+	case errors.Is(err, storage.ErrDuplicate):
+		c.JSON(http.StatusConflict, gin.H{"error": "short_name already exists"})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+	default:
+		c.JSON(http.StatusOK, h.respond(link))
+	}
+}
+
+// DeleteLink — DELETE /api/links/:id.
+func (h *Handlers) DeleteLink(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+
+	deleted, err := h.store.DeleteLink(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// Redirect — GET /:short_name.
+func (h *Handlers) Redirect(c *gin.Context) {
+	link, err := h.store.GetLinkByShortName(c.Request.Context(), c.Param("short_name"))
+	if errors.Is(err, storage.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+
+	linkID := link.ID
+	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = h.store.AddVisit(ctx, linkID)
-	}(link.ID)
+	}()
 
 	c.Redirect(http.StatusMovedPermanently, link.OriginalURL)
 }
 
-// generateShortName создаёт случайную строку длины n из base62-алфавита
-// с криптографическим генератором случайности.
+func (h *Handlers) parseID(c *gin.Context) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return 0, false
+	}
+	return id, true
+}
+
 func generateShortName(n int) (string, error) {
 	b := make([]byte, n)
 	for i := range b {

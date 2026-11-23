@@ -14,7 +14,7 @@ import (
 	"link-shortener/internal/storage"
 )
 
-func New(store storage.Store) *gin.Engine {
+func New(store storage.Store, baseURL string) *gin.Engine {
 	router := gin.New()
 
 	router.Use(sentrygin.New(sentrygin.Options{}))
@@ -32,7 +32,7 @@ func New(store storage.Store) *gin.Engine {
 		})
 	}
 
-	handlers.New(store).Register(router)
+	handlers.New(store, baseURL).Register(router)
 
 	return router
 }

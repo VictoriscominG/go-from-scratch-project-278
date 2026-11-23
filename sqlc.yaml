@@ -1,0 +1,15 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "db/migrations"
+    queries: "db/queries"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/storage/sqlc"
+        sql_package: "pgx/v5"
+        rename:
+          original_url: "OriginalURL"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

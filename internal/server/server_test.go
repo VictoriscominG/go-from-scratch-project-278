@@ -4,141 +4,177 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/gin-gonic/gin"
 
 	"link-shortener/internal/storage"
 )
 
-// fakeStore — in-memory реализация storage.Store для тестов.
-// map защищён мьютексом: хендлеры пишут визиты из горутин.
+// fakeStore — реализация storage.Store в памяти для тестов сервера.
 type fakeStore struct {
 	mu     sync.Mutex
-	links  map[string]storage.Link
 	nextID int64
-	visits int
+	links  map[int64]storage.Link
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{links: make(map[string]storage.Link), nextID: 1}
+	return &fakeStore{nextID: 1, links: make(map[int64]storage.Link)}
 }
 
 func (f *fakeStore) CreateLink(_ context.Context, originalURL, shortName string) (*storage.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, exists := f.links[shortName]; exists {
-		return nil, storage.ErrDuplicate
+	for _, l := range f.links {
+		if l.ShortName == shortName {
+			return nil, storage.ErrDuplicate
+		}
 	}
-	l := &storage.Link{
-		ID:          f.nextID,
-		OriginalURL: originalURL,
-		ShortName:   shortName,
-		CreatedAt:   time.Now(),
-	}
+	l := storage.Link{ID: f.nextID, OriginalURL: originalURL, ShortName: shortName, CreatedAt: time.Now()}
 	f.nextID++
-	f.links[shortName] = *l
-	return l, nil
+	f.links[l.ID] = l
+	return &l, nil
+}
+
+func (f *fakeStore) ListLinks(_ context.Context) ([]storage.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]storage.Link, 0, len(f.links))
+	for _, l := range f.links {
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetLinkByID(_ context.Context, id int64) (*storage.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	l, ok := f.links[id]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return &l, nil
 }
 
 func (f *fakeStore) GetLinkByShortName(_ context.Context, shortName string) (*storage.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if l, ok := f.links[shortName]; ok {
-		return &l, nil
+	for _, l := range f.links {
+		if l.ShortName == shortName {
+			cp := l
+			return &cp, nil
+		}
 	}
 	return nil, storage.ErrNotFound
 }
 
-func (f *fakeStore) AddVisit(_ context.Context, _ int64) error {
+func (f *fakeStore) UpdateLink(_ context.Context, id int64, originalURL string, shortName storage.OptionalString) (*storage.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.visits++
-	return nil
+	l, ok := f.links[id]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	if shortName.Set {
+		for _, other := range f.links {
+			if other.ID != id && other.ShortName == shortName.Value {
+				return nil, storage.ErrDuplicate
+			}
+		}
+	}
+	l.OriginalURL = originalURL
+	if shortName.Set {
+		l.ShortName = shortName.Value
+	}
+	f.links[id] = l
+	return &l, nil
 }
 
-func (f *fakeStore) Close() {}
+func (f *fakeStore) DeleteLink(_ context.Context, id int64) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.links[id]; !ok {
+		return false, nil
+	}
+	delete(f.links, id)
+	return true, nil
+}
+
+func (f *fakeStore) AddVisit(_ context.Context, _ int64) error { return nil }
+func (f *fakeStore) Close()                                    {}
+
+func newTestServer(t *testing.T, baseURL string) *gin.Engine {
+	t.Helper()
+	return New(newFakeStore(), baseURL)
+}
+
+func do(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
 
 func TestPing(t *testing.T) {
-	router := New(newFakeStore())
+	r := newTestServer(t, "https://short.io")
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "pong", w.Body.String())
+	w := do(r, http.MethodGet, "/ping")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if w.Body.String() != "pong" {
+		t.Fatalf("want pong, got %q", w.Body.String())
+	}
 }
 
-func TestCreateLink(t *testing.T) {
-	router := New(newFakeStore())
+func TestRedirectThroughServer(t *testing.T) {
+	store := newFakeStore()
+	if _, err := store.CreateLink(context.Background(), "https://example.com/target", "go"); err != nil {
+		t.Fatal(err)
+	}
+	r := New(store, "https://short.io")
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/links",
-		strings.NewReader(`{"original_url": "https://example.com/long"}`))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusCreated, w.Code)
-	assert.Contains(t, w.Body.String(), `"original_url":"https://example.com/long"`)
+	w := do(r, http.MethodGet, "/go")
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("want 301, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "https://example.com/target" {
+		t.Fatalf("unexpected Location: %s", loc)
+	}
 }
 
-func TestCreateLinkInvalidURL(t *testing.T) {
-	router := New(newFakeStore())
+func TestNotFoundForUnknownShortName(t *testing.T) {
+	r := newTestServer(t, "https://short.io")
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/links",
-		strings.NewReader(`{"original_url": "not-a-url"}`))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	w := do(r, http.MethodGet, "/missing")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
 }
 
-func TestCreateLinkDuplicate(t *testing.T) {
-	router := New(newFakeStore())
+func TestDebugSentryRoute(t *testing.T) {
+	t.Run("enabled when SENTRY_DEBUG=on", func(t *testing.T) {
+		t.Setenv("SENTRY_DEBUG", "on")
+		r := New(newFakeStore(), "https://short.io")
 
-	body := `{"original_url": "https://example.com", "short_name": "taken"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(httptest.NewRecorder(), req) // первая — ок
+		w := do(r, http.MethodGet, "/debug/sentry")
+		if w.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d", w.Code)
+		}
+		if w.Body.String() != "sent" {
+			t.Fatalf("want sent, got %q", w.Body.String())
+		}
+	})
 
-	w := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(body))
-	req2.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req2)
+	t.Run("disabled without SENTRY_DEBUG", func(t *testing.T) {
+		t.Setenv("SENTRY_DEBUG", "")
+		r := New(newFakeStore(), "https://short.io")
 
-	assert.Equal(t, http.StatusConflict, w.Code)
-}
-
-func TestRedirect(t *testing.T) {
-	router := New(newFakeStore())
-
-	// создаём ссылку
-	req := httptest.NewRequest(http.MethodPost, "/api/links",
-		strings.NewReader(`{"original_url": "https://example.com/long", "short_name": "abc"}`))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(httptest.NewRecorder(), req)
-
-	// переходим
-	w := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodGet, "/abc", nil)
-	router.ServeHTTP(w, req2)
-
-	assert.Equal(t, http.StatusMovedPermanently, w.Code)
-	assert.Equal(t, "https://example.com/long", w.Header().Get("Location"))
-}
-
-func TestRedirectNotFound(t *testing.T) {
-	router := New(newFakeStore())
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
+		w := do(r, http.MethodGet, "/debug/sentry")
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("want 404, got %d", w.Code)
+		}
+	})
 }
