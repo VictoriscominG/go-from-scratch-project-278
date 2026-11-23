@@ -23,6 +23,7 @@ FROM alpine:3.22
 WORKDIR /app
 
 # Непривилегированный пользователь: приложение не должно работать от root
+RUN apk add --no-cache bash
 RUN addgroup -S app && adduser -S -G app app
 RUN chown -R app:app /app
 
