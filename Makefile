@@ -29,3 +29,6 @@ ci: # Запускает все тесты
 
 migrate: # Применяет миграции к базе из переменной DATABASE_URL.
 	go tool goose -dir ./db/migrations postgres "$(DATABASE_URL)" up
+
+cover: # Тесты с покрытием (файл для SonarCloud)
+	go test -race -coverprofile=coverage.out -covermode=atomic ./...

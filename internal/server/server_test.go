@@ -136,7 +136,7 @@ func TestRedirectThroughServer(t *testing.T) {
 	}
 	r := New(store, "https://short.io")
 
-	w := do(r, http.MethodGet, "/go")
+	w := do(r, http.MethodGet, "/r/go")
 	if w.Code != http.StatusMovedPermanently {
 		t.Fatalf("want 301, got %d", w.Code)
 	}

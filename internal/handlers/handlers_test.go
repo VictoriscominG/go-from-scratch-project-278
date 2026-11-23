@@ -143,7 +143,7 @@ func TestCreateLink(t *testing.T) {
 	if resp.ShortName == "" || resp.ShortURL == "" {
 		t.Fatalf("short_name/short_url must be filled: %+v", resp)
 	}
-	if resp.ShortURL != "https://short.io/"+resp.ShortName {
+	if resp.ShortURL != "https://short.io/r/"+resp.ShortName {
 		t.Fatalf("short_url mismatch: %s", resp.ShortURL)
 	}
 }
@@ -268,7 +268,7 @@ func TestUpdateLink(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &updated)
-	if updated.ShortName != "new" || updated.ShortURL != "https://short.io/new" {
+	if updated.ShortName != "new" || updated.ShortURL != "https://short.io/r/new" {
 		t.Fatalf("unexpected update: %+v", updated)
 	}
 
@@ -307,7 +307,7 @@ func TestRedirect(t *testing.T) {
 	r := setup(t)
 	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "go"}`)
 
-	req := httptest.NewRequest(http.MethodGet, "/go", nil)
+	req := httptest.NewRequest(http.MethodGet, "/r/go", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusMovedPermanently {
@@ -317,7 +317,7 @@ func TestRedirect(t *testing.T) {
 		t.Fatalf("unexpected Location: %s", loc)
 	}
 
-	if w := do(r, http.MethodGet, "/missing", ""); w.Code != http.StatusNotFound {
+	if w := do(r, http.MethodGet, "/r/missing", ""); w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
 	}
 }
