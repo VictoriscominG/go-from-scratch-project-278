@@ -66,11 +66,14 @@ func (p *Postgres) CreateLink(ctx context.Context, originalURL, shortName string
 	return &l, nil
 }
 
-func (p *Postgres) ListLinks(ctx context.Context) ([]Link, error) {
+func (p *Postgres) ListLinks(ctx context.Context, limit, offset int) ([]Link, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	rows, err := p.q.ListLinks(ctx)
+	rows, err := p.q.ListLinksPage(ctx, sqlc.ListLinksPageParams{
+		PageSize:  int32(limit),
+		PageStart: int32(offset),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +82,13 @@ func (p *Postgres) ListLinks(ctx context.Context) ([]Link, error) {
 		out = append(out, toLink(r))
 	}
 	return out, nil
+}
+
+func (p *Postgres) CountLinks(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return p.q.CountLinks(ctx)
 }
 
 func (p *Postgres) GetLinkByID(ctx context.Context, id int64) (*Link, error) {

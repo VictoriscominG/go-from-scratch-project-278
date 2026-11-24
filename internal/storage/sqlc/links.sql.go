@@ -18,6 +18,17 @@ func (q *Queries) AddVisit(ctx context.Context, linkID int64) error {
 	return err
 }
 
+const countLinks = `-- name: CountLinks :one
+SELECT COUNT(*) FROM links
+`
+
+func (q *Queries) CountLinks(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLinks)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createLink = `-- name: CreateLink :one
 INSERT INTO links (original_url, short_name)
 VALUES ($1, $2)
@@ -98,6 +109,43 @@ ORDER BY id
 
 func (q *Queries) ListLinks(ctx context.Context) ([]Link, error) {
 	rows, err := q.db.Query(ctx, listLinks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Link
+	for rows.Next() {
+		var i Link
+		if err := rows.Scan(
+			&i.ID,
+			&i.OriginalURL,
+			&i.ShortName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLinksPage = `-- name: ListLinksPage :many
+SELECT id, original_url, short_name, created_at
+FROM links
+ORDER BY id
+LIMIT $2::int OFFSET $1::int
+`
+
+type ListLinksPageParams struct {
+	PageStart int32
+	PageSize  int32
+}
+
+func (q *Queries) ListLinksPage(ctx context.Context, arg ListLinksPageParams) ([]Link, error) {
+	rows, err := q.db.Query(ctx, listLinksPage, arg.PageStart, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}

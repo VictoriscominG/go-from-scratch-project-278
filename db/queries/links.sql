@@ -30,3 +30,12 @@ WHERE id = $1;
 
 -- name: AddVisit :exec
 INSERT INTO visits (link_id) VALUES ($1);
+
+-- name: ListLinksPage :many
+SELECT id, original_url, short_name, created_at
+FROM links
+ORDER BY id
+LIMIT sqlc.arg(page_size)::int OFFSET sqlc.arg(page_start)::int;
+
+-- name: CountLinks :one
+SELECT COUNT(*) FROM links;

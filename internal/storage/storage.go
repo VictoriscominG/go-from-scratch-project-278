@@ -19,7 +19,8 @@ type OptionalString struct {
 
 type Store interface {
 	CreateLink(ctx context.Context, originalURL, shortName string) (*Link, error)
-	ListLinks(ctx context.Context) ([]Link, error)
+	ListLinks(ctx context.Context, limit, offset int) ([]Link, error)
+	CountLinks(ctx context.Context) (int64, error)
 	GetLinkByID(ctx context.Context, id int64) (*Link, error)
 	GetLinkByShortName(ctx context.Context, shortName string) (*Link, error)
 	UpdateLink(ctx context.Context, id int64, originalURL string, shortName OptionalString) (*Link, error)

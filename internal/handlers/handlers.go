@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -107,13 +108,47 @@ func (h *Handlers) CreateLink(c *gin.Context) {
 	c.JSON(http.StatusCreated, h.respond(link))
 }
 
-// ListLinks — GET /api/links.
+// maxPageSize — верхняя граница размера страницы, чтобы клиент не выкачивал
+// всю таблицу одним запросом.
+const maxPageSize = 100
+
+// ListLinks — GET /api/links. Опционально принимает ?range=[start,end]:
+// OFFSET = start, LIMIT = end - start. Возвращает заголовок Content-Range.
 func (h *Handlers) ListLinks(c *gin.Context) {
-	links, err := h.store.ListLinks(c.Request.Context())
+	total, err := h.store.CountLinks(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
+
+	limit, offset := -1, 0 // по умолчанию — все записи
+	rawRange := c.Query("range")
+	if rawRange != "" {
+		start, end, err := parseRange(rawRange)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if end-start > maxPageSize {
+			end = start + maxPageSize
+		}
+		limit, offset = int(end-start), int(start)
+	}
+
+	links, err := h.store.ListLinks(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+
+	// Конец диапазона для заголовка: запрошенный end либо фактический
+	// (если записей меньше, чем просили).
+	rangeEnd := offset + limit
+	if limit < 0 || rangeEnd > int(total) {
+		rangeEnd = int(total)
+	}
+	c.Header("Content-Range", fmt.Sprintf("links %d-%d/%d", offset, rangeEnd, total))
+
 	c.JSON(http.StatusOK, h.respondList(links))
 }
 
@@ -231,4 +266,28 @@ func generateShortName(n int) (string, error) {
 		b[i] = alphabet[idx.Int64()]
 	}
 	return string(b), nil
+}
+
+// parseRange разбирает параметр вида "[5, 10]" (скобки и пробелы допустимы).
+func parseRange(s string) (start, end int64, err error) {
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	s = strings.ReplaceAll(s, " ", "")
+
+	parts := strings.Split(s, ",")
+	if len(parts) != 2 {
+		return 0, 0, errors.New("range must contain two values")
+	}
+	start, err = strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range start")
+	}
+	end, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range end")
+	}
+	if start < 0 || end <= start {
+		return 0, 0, errors.New("range must satisfy 0 <= start < end")
+	}
+	return start, end, nil
 }

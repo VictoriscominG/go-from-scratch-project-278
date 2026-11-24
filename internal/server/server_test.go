@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -38,14 +39,27 @@ func (f *fakeStore) CreateLink(_ context.Context, originalURL, shortName string)
 	return &l, nil
 }
 
-func (f *fakeStore) ListLinks(_ context.Context) ([]storage.Link, error) {
+func (f *fakeStore) ListLinks(_ context.Context, limit, offset int) ([]storage.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make([]storage.Link, 0, len(f.links))
+	all := make([]storage.Link, 0, len(f.links))
 	for _, l := range f.links {
-		out = append(out, l)
+		all = append(all, l)
 	}
-	return out, nil
+
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	if limit < 0 {
+		return all, nil
+	}
+	lo := min(offset, len(all))
+	hi := min(offset+limit, len(all))
+	return all[lo:hi], nil
+}
+
+func (f *fakeStore) CountLinks(_ context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return int64(len(f.links)), nil
 }
 
 func (f *fakeStore) GetLinkByID(_ context.Context, id int64) (*storage.Link, error) {
