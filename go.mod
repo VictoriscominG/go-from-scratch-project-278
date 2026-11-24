@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/getsentry/sentry-go/gin v0.50.0
+	github.com/gin-contrib/cors v1.7.11
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
@@ -60,9 +61,9 @@ require (
 	github.com/breml/errchkjson v0.4.1 // indirect
 	github.com/butuzov/ireturn v0.4.1 // indirect
 	github.com/butuzov/mirror v1.3.3 // indirect
-	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic v1.15.0 // indirect
-	github.com/bytedance/sonic/loader v0.5.0 // indirect
+	github.com/bytedance/gopkg v0.1.4 // indirect
+	github.com/bytedance/sonic v1.15.2 // indirect
+	github.com/bytedance/sonic/loader v0.5.1 // indirect
 	github.com/catenacyber/perfsprint v0.10.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -76,7 +77,7 @@ require (
 	github.com/ckaznocha/intrange v0.3.1 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/cubicdaiya/gonp v1.0.4 // indirect
@@ -95,15 +96,15 @@ require (
 	github.com/firefart/nonamedreturns v1.0.8 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/ghostiam/protogetter v1.0.1 // indirect
-	github.com/gin-contrib/sse v1.1.0 // indirect
+	github.com/gin-contrib/sse v1.1.1 // indirect
 	github.com/go-critic/go-critic v0.15.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.8.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.30.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-toolsmith/astcast v1.1.0 // indirect
 	github.com/go-toolsmith/astcopy v1.1.0 // indirect
@@ -115,7 +116,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-xmlfmt/xmlfmt v1.1.3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.4 // indirect
 	github.com/gofrs/flock v0.13.1 // indirect
@@ -164,7 +165,7 @@ require (
 	github.com/kisielk/errcheck v1.30.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.6 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/kulti/thelper v0.7.1 // indirect
 	github.com/kunwardeep/paralleltest v1.0.16 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -226,7 +227,7 @@ require (
 	github.com/quasilyte/regex/syntax v0.0.0-20210819130434-b3f0c404a727 // indirect
 	github.com/quasilyte/stdinfo v0.0.0-20220114132959-f7386bf02567 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/raeperd/recvcheck v0.3.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -293,14 +294,14 @@ require (
 	go-simpler.org/sloglint v0.12.0 // indirect
 	go.augendre.info/arangolint v0.4.0 // indirect
 	go.augendre.info/fatcontext v0.10.1 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/arch v0.22.0 // indirect
+	golang.org/x/arch v0.29.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20261109185158-a52e3aef5920 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect

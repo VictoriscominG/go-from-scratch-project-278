@@ -1,0 +1,12 @@
+{
+  "name": "link-shortener",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,ui \"go run .\" \"npx start-hexlet-url-shortener-frontend\"",
+    "start": "npx start-hexlet-url-shortener-frontend"
+  },
+  "dependencies": {
+    "@hexlet/project-url-shortener-frontend": "^1.0.0",
+    "concurrently": "^10.0.7"
+  }
+}

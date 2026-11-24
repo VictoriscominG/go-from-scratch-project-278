@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -117,6 +118,7 @@ const maxPageSize = 100
 func (h *Handlers) ListLinks(c *gin.Context) {
 	total, err := h.store.CountLinks(c.Request.Context())
 	if err != nil {
+		log.Printf("count links: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
@@ -137,6 +139,7 @@ func (h *Handlers) ListLinks(c *gin.Context) {
 
 	links, err := h.store.ListLinks(c.Request.Context(), limit, offset)
 	if err != nil {
+		log.Printf("list links: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
