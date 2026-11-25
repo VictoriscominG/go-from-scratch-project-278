@@ -1,25 +1,17 @@
-{$PORT:8080}
+:80
 
-# Проксируем API в Go-приложение
-handle /api/* {
-	reverse_proxy localhost:8081
+# Статика из /app/public
+root * /app/public
+
+# Отдаём /assets/* как есть
+handle /assets/* {
+    file_server
 }
 
-handle /r/* {
-	reverse_proxy localhost:8081
+# Отдаём корень как index.html
+handle / {
+    file_server
 }
 
-handle /ping {
-	reverse_proxy localhost:8081
-}
-
-handle /debug/* {
-	reverse_proxy localhost:8081
-}
-
-# Всё остальное — статика фронтенда
-handle {
-	root * /srv/frontend
-	try_files {path} /index.html
-	file_server
-}
+# Всё остальное — в приложение на 8080
+reverse_proxy localhost:8080

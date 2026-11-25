@@ -1,49 +1,56 @@
-# Build backend
+# 1) Build frontend
+FROM node:24-alpine AS frontend-builder
+WORKDIR /build/frontend
+
+COPY package*.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --prefer-offline --no-audit
+
+# 2) Build backend
 FROM golang:1.27-alpine AS backend-builder
 RUN apk add --no-cache git
 WORKDIR /build/code
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
-go mod download
+  go mod download
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-go build -o /build/goose github.com/pressly/goose/v3/cmd/goose
+  go build -o /build/goose github.com/pressly/goose/v3/cmd/goose
 
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /build/app .
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /build/app .
 
-# Build frontend
-FROM node:22-alpine AS frontend-builder
-WORKDIR /build/frontend
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-RUN npx start-hexlet-url-shortener-frontend --build || npm run build
-
-# Runtime
+# 3) Runtime
 FROM alpine:3.22
+
+RUN apk add --no-cache ca-certificates tzdata bash caddy libcap
 
 WORKDIR /app
 
-RUN apk add --no-cache bash caddy
-RUN addgroup -S app && adduser -S -G app app
-RUN chown -R app:app /app
-
 COPY --from=backend-builder /build/app /app/bin/app
-COPY --from=backend-builder /build/goose /usr/local/bin/goose
+COPY --from=frontend-builder \
+  /build/frontend/node_modules/@hexlet/project-url-shortener-frontend/dist \
+  /app/public
+
 COPY --from=backend-builder build/code/db/migrations /app/db/migrations
+COPY --from=backend-builder /build/goose /usr/local/bin/goose
+
 COPY bin/run.sh /app/bin/run.sh
 RUN chmod +x /app/bin/run.sh
 
-# Статика фронтенда + конфиг Caddy
-COPY --from=frontend-builder /build/frontend/dist /srv/frontend
 COPY Caddyfile /etc/caddy/Caddyfile
+
+RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
+
+RUN addgroup -S app && adduser -S -G app app
+RUN chown -R app:app /app
 
 USER app
 
-EXPOSE 8080
+EXPOSE 80
 
 CMD ["/app/bin/run.sh"]
