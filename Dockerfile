@@ -44,7 +44,7 @@ RUN chmod +x /app/bin/run.sh
 
 COPY Caddyfile /etc/caddy/Caddyfile
 
-RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
+RUN setcap cap_net_bind_service=+ep "$(command -v caddy)"
 
 RUN addgroup -S app && adduser -S -G app app
 RUN chown -R app:app /app
