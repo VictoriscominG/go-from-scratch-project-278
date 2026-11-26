@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -22,11 +24,12 @@ type config struct {
 }
 
 func loadConfig() (config, error) {
-	_ = godotenv.Load()
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return config{}, fmt.Errorf("invalid PORT %q: must be a number", port)
 	}
 
 	baseURL := os.Getenv("BASE_URL")
@@ -48,6 +51,8 @@ func loadConfig() (config, error) {
 }
 
 func main() {
+	_ = godotenv.Load()
+
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
