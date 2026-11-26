@@ -5,7 +5,7 @@ WORKDIR /build/frontend
 COPY package*.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-  npm ci --prefer-offline --no-audit
+  npm ci --ignore-scripts --prefer-offline --no-audit
 
 # 2) Build backend
 FROM golang:1.27-alpine AS backend-builder
@@ -27,7 +27,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # 3) Runtime
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates tzdata bash caddy
+RUN apk add --no-cache ca-certificates tzdata bash caddy libcap
+
+RUN addgroup -S app && adduser -S -G app app
 
 WORKDIR /app
 
@@ -44,6 +46,13 @@ RUN chmod +x /app/bin/run.sh
 
 COPY Caddyfile /etc/caddy/Caddyfile
 
+RUN chown -R app:app /app
+
+RUN setcap 'cap_net_bind_service=+ep' /usr/bin/caddy
+
+USER app
+
 EXPOSE 80
 
 CMD ["/app/bin/run.sh"]
+

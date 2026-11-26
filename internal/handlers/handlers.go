@@ -8,11 +8,14 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 
 	"link-shortener/internal/storage"
 )
@@ -27,6 +30,15 @@ type Handlers struct {
 }
 
 func New(store storage.Store, baseURL string) *Handlers {
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+			name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+			if name == "-" {
+				return ""
+			}
+			return name
+		})
+	}
 	return &Handlers{store: store, baseURL: strings.TrimRight(baseURL, "/")}
 }
 
@@ -67,41 +79,35 @@ func (h *Handlers) respondList(links []storage.Link) []linkResponse {
 	return out
 }
 
-type createLinkRequest struct {
-	OriginalURL string `json:"original_url"`
-	ShortName   string `json:"short_name"`
+type createLinkPayload struct {
+	OriginalURL string `json:"original_url" binding:"required,url"`
+	ShortName   string `json:"short_name" binding:"omitempty,min=3,max=32"`
 }
 
 // CreateLink — POST /api/links.
 func (h *Handlers) CreateLink(c *gin.Context) {
-	var req createLinkRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+	var payload createLinkPayload
+	if !bindPayload(c, &payload) {
 		return
 	}
 
-	u, err := url.Parse(req.OriginalURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
+	if !h.validateURL(c, payload.OriginalURL) {
 		return
 	}
 
-	shortName := req.ShortName
-	if shortName == "" {
-		sn, err := generateShortName(shortNameLength)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
-			return
-		}
-		shortName = sn
+	shortName, ok := resolveShortName(c, payload.ShortName)
+	if !ok {
+		return
 	}
 
-	link, err := h.store.CreateLink(c.Request.Context(), req.OriginalURL, shortName)
+	link, err := h.store.CreateLink(c.Request.Context(), payload.OriginalURL, shortName)
 	if errors.Is(err, storage.ErrDuplicate) {
-		c.JSON(http.StatusConflict, gin.H{"error": "short_name already exists"})
+		respondShortNameTaken(c)
 		return
 	}
+
 	if err != nil {
+		log.Printf("create link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
@@ -113,47 +119,27 @@ func (h *Handlers) CreateLink(c *gin.Context) {
 // всю таблицу одним запросом.
 const maxPageSize = 100
 
-// ListLinks — GET /api/links. Опционально принимает ?range=[start,end]:
-// OFFSET = start, LIMIT = end - start. Возвращает заголовок Content-Range.
 func (h *Handlers) ListLinks(c *gin.Context) {
 	total, err := h.store.CountLinks(c.Request.Context())
 	if err != nil {
 		log.Printf("count links: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 
-	limit, offset := 0, 0
-	rawRange := c.Query("range")
-	if rawRange != "" {
-		start, end, err := parseRange(rawRange)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if end-start > maxPageSize {
-			end = start + maxPageSize
-		}
-		limit, offset = int(end-start), int(start)
-	} else {
-		limit = int(total) // без range — все записи
+	limit, offset, ok := resolvePaging(c, total)
+	if !ok {
+		return
 	}
 
 	links, err := h.store.ListLinks(c.Request.Context(), limit, offset)
 	if err != nil {
 		log.Printf("list links: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 
-	// Конец диапазона для заголовка: запрошенный end либо фактический
-	// (если записей меньше, чем просили).
-	rangeEnd := offset + limit
-	if limit < 0 || rangeEnd > int(total) {
-		rangeEnd = int(total)
-	}
-	c.Header("Content-Range", fmt.Sprintf("links %d-%d/%d", offset, rangeEnd, total))
-
+	setContentRange(c, "links", offset, limit, int(total))
 	c.JSON(http.StatusOK, h.respondList(links))
 }
 
@@ -161,39 +147,23 @@ func (h *Handlers) ListVisits(c *gin.Context) {
 	total, err := h.store.CountVisits(c.Request.Context())
 	if err != nil {
 		log.Printf("count visits: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 
-	limit, offset := 0, 0
-	rawRange := c.Query("range")
-	if rawRange != "" {
-		start, end, err := parseRange(rawRange)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if end-start > maxPageSize {
-			end = start + maxPageSize
-		}
-		limit, offset = int(end-start), int(start)
-	} else {
-		limit = int(total) // без range — все записи
+	limit, offset, ok := resolvePaging(c, total)
+	if !ok {
+		return
 	}
 
 	visits, err := h.store.ListVisits(c.Request.Context(), limit, offset)
 	if err != nil {
 		log.Printf("list visits: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 
-	rangeEnd := offset + limit
-	if limit < 0 || rangeEnd > int(total) {
-		rangeEnd = int(total)
-	}
-	c.Header("Content-Range", fmt.Sprintf("link_visits %d-%d/%d", offset, rangeEnd, total))
-
+	setContentRange(c, "link_visits", offset, limit, int(total))
 	c.JSON(http.StatusOK, visits)
 }
 
@@ -206,7 +176,7 @@ func (h *Handlers) GetLink(c *gin.Context) {
 
 	link, err := h.store.GetLinkByID(c.Request.Context(), id)
 	if errors.Is(err, storage.ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		respondNotFound(c)
 		return
 	}
 	if err != nil {
@@ -225,26 +195,25 @@ func (h *Handlers) UpdateLink(c *gin.Context) {
 		return
 	}
 
-	var req createLinkRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+	var payload createLinkPayload
+	if !bindPayload(c, &payload) {
 		return
 	}
 
-	u, err := url.Parse(req.OriginalURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
+	if !h.validateURL(c, payload.OriginalURL) {
 		return
 	}
 
 	link, err := h.store.UpdateLink(c.Request.Context(), id,
-		req.OriginalURL, storage.OptionalString{Value: req.ShortName, Set: req.ShortName != ""})
+		payload.OriginalURL,
+		storage.OptionalString{Value: payload.ShortName, Set: payload.ShortName != ""})
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		respondNotFound(c)
 	case errors.Is(err, storage.ErrDuplicate):
-		c.JSON(http.StatusConflict, gin.H{"error": "short_name already exists"})
+		respondShortNameTaken(c)
 	case err != nil:
+		log.Printf("update link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 	default:
 		c.JSON(http.StatusOK, h.respond(link))
@@ -341,4 +310,95 @@ func parseRange(s string) (start, end int64, err error) {
 		return 0, 0, errors.New("range must satisfy 0 <= start < end")
 	}
 	return start, end, nil
+}
+
+// bindPayload разбирает JSON и при ошибке валидации сам отдаёт ответ.
+// Возвращает false, если ответ уже отправлен.
+func bindPayload(c *gin.Context, obj any) bool {
+	if err := c.ShouldBindJSON(obj); err != nil {
+		var verr validator.ValidationErrors
+		if errors.As(err, &verr) {
+			errs := make(map[string]string, len(verr))
+			for _, e := range verr {
+				errs[e.Field()] = e.Error()
+			}
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"errors": errs})
+			return false
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return false
+	}
+	return true
+}
+
+// validateURL проверяет original_url и при ошибке сам отдаёт 422.
+// Возвращает false, если ответ уже отправлен.
+func (h *Handlers) validateURL(c *gin.Context, raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"errors": gin.H{"original_url": "must be an absolute http(s) URL"},
+		})
+		return false
+	}
+	return true
+}
+
+// resolvePaging вычисляет limit/offset по параметру ?range.
+// Без range возвращает все записи (limit = total). При некорректном range
+// сам отвечает 400 и возвращает ok=false.
+func resolvePaging(c *gin.Context, total int64) (limit, offset int, ok bool) {
+	rawRange := c.Query("range")
+	if rawRange == "" {
+		return int(total), 0, true // без range — все записи
+	}
+
+	start, end, err := parseRange(rawRange)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return 0, 0, false
+	}
+	if end-start > maxPageSize {
+		end = start + maxPageSize
+	}
+	return int(end - start), int(start), true
+}
+
+// setContentRange ставит заголовок Content-Range: "<resource> start-end/total".
+// Конец диапазона — запрошенный end либо фактический total.
+func setContentRange(c *gin.Context, resource string, offset, limit, total int) {
+	rangeEnd := offset + limit
+	if limit < 0 || rangeEnd > total {
+		rangeEnd = total
+	}
+	c.Header("Content-Range", fmt.Sprintf("%s %d-%d/%d", resource, offset, rangeEnd, total))
+}
+
+func respondInternal(c *gin.Context) {
+	c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+}
+
+func respondNotFound(c *gin.Context) {
+	c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+}
+
+func respondShortNameTaken(c *gin.Context) {
+	c.JSON(http.StatusUnprocessableEntity, gin.H{
+		"errors": gin.H{"short_name": "short name already in use"},
+	})
+}
+
+// resolveShortName возвращает переданное имя или генерирует новое.
+// При ошибке генерации сам отвечает 500 и возвращает ok=false.
+func resolveShortName(c *gin.Context, requested string) (string, bool) {
+	if requested != "" {
+		return requested, true
+	}
+	sn, err := generateShortName(shortNameLength)
+	if err != nil {
+		log.Printf("generate short name: %v", err)
+		respondInternal(c)
+		return "", false
+	}
+	return sn, true
 }

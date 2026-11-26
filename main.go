@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"time"
@@ -13,10 +14,15 @@ import (
 	"link-shortener/internal/storage"
 )
 
-func main() {
-	_ = godotenv.Load() // локально подхватит .env, в проде файла нет — и ладно
+type config struct {
+	port      string
+	baseURL   string
+	dsn       string
+	sentryDSN string
+}
 
-	ctx := context.Background()
+func loadConfig() (config, error) {
+	_ = godotenv.Load()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -30,24 +36,40 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("DATABASE_URL is required")
+		return config{}, errors.New("DATABASE_URL is required")
 	}
 
-	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
-		if err := sentry.Init(sentry.ClientOptions{Dsn: sentryDSN}); err != nil {
+	return config{
+		port:      port,
+		baseURL:   baseURL,
+		dsn:       dsn,
+		sentryDSN: os.Getenv("SENTRY_DSN"),
+	}, nil
+}
+
+func main() {
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx := context.Background()
+
+	if cfg.sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{Dsn: cfg.sentryDSN}); err != nil {
 			log.Fatalf("sentry init: %v", err)
 		}
 		defer sentry.Flush(2 * time.Second)
 	}
 
-	store, err := storage.NewPostgres(ctx, dsn)
+	store, err := storage.NewPostgres(ctx, cfg.dsn)
 	if err != nil {
 		log.Fatalf("db connect: %v", err)
 	}
 	defer store.Close()
 
-	log.Printf("listening on :%s", port)
-	if err := server.New(store, baseURL).Run(":" + port); err != nil {
+	log.Printf("listening on :%s", cfg.port)
+	if err := server.New(store, cfg.baseURL).Run(":" + cfg.port); err != nil {
 		log.Fatal(err)
 	}
 }

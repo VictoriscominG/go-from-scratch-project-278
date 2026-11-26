@@ -212,9 +212,11 @@ func TestCreateLinkValidation(t *testing.T) {
 		body string
 		want int
 	}{
-		{`{}`, http.StatusBadRequest},                            // нет original_url
-		{`{"original_url": "not-a-url"}`, http.StatusBadRequest}, // невалидный URL
-		{`not json`, http.StatusBadRequest},                      // битый JSON
+		{`{}`, http.StatusUnprocessableEntity},
+		{`{"original_url": "not-a-url"}`, http.StatusUnprocessableEntity},
+		{`{"original_url": "https://a.io", "short_name": "ab"}`, http.StatusUnprocessableEntity},
+		{`{"original_url": "https://a.io", "short_name": "01234567890123456789012345678901x"}`, http.StatusUnprocessableEntity},
+		{`not json`, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		if w := do(r, http.MethodPost, "/api/links", tc.body); w.Code != tc.want {
@@ -227,8 +229,16 @@ func TestCreateDuplicateShortName(t *testing.T) {
 	r := setup(t)
 	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io", "short_name": "abc"}`)
 	w := do(r, http.MethodPost, "/api/links", `{"original_url": "https://b.io", "short_name": "abc"}`)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("want 409, got %d", w.Code)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d: %s", w.Code, w.Body)
+	}
+
+	var resp map[string]map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["errors"]["short_name"] != "short name already in use" {
+		t.Fatalf("unexpected error body: %s", w.Body)
 	}
 }
 
@@ -320,10 +330,10 @@ func TestUpdateLink(t *testing.T) {
 		t.Fatalf("want 404, got %d", w.Code)
 	}
 
-	// Чужой short_name → 409.
+	// Чужой short_name → 422.
 	do(r, http.MethodPost, "/api/links", `{"original_url": "https://c.io", "short_name": "taken"}`)
-	if w := do(r, http.MethodPut, "/api/links/"+id(created.ID), `{"original_url": "https://n.io", "short_name": "taken"}`); w.Code != http.StatusConflict {
-		t.Fatalf("want 409, got %d", w.Code)
+	if w := do(r, http.MethodPut, "/api/links/"+id(created.ID), `{"original_url": "https://n.io", "short_name": "taken"}`); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", w.Code)
 	}
 }
 
@@ -348,9 +358,9 @@ func TestDeleteLink(t *testing.T) {
 
 func TestRedirect(t *testing.T) {
 	r := setup(t)
-	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "go"}`)
+	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "golang"}`)
 
-	req := httptest.NewRequest(http.MethodGet, "/r/go", nil)
+	req := httptest.NewRequest(http.MethodGet, "/r/golang", nil)
 	req.Header.Set("User-Agent", "test-agent/1.0")
 	req.Header.Set("Referer", "https://ref.io/page")
 	w := httptest.NewRecorder()
@@ -493,9 +503,9 @@ func getVisits(t *testing.T, r *gin.Engine) []storage.Visit {
 
 func TestRedirectRecordsVisit(t *testing.T) {
 	r := setup(t)
-	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "go"}`)
+	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "golang"}`)
 
-	req := httptest.NewRequest(http.MethodGet, "/r/go", nil)
+	req := httptest.NewRequest(http.MethodGet, "/r/golang", nil)
 	req.Header.Set("User-Agent", "test-agent/1.0")
 	req.Header.Set("Referer", "https://ref.io/page")
 	w := httptest.NewRecorder()
@@ -572,5 +582,64 @@ func TestListVisitsInvalidRange(t *testing.T) {
 	}
 	if w := do(r, http.MethodGet, "/api/link_visits?range=%5B5%5D", ""); w.Code != http.StatusBadRequest {
 		t.Errorf("single value: want 400, got %d", w.Code)
+	}
+}
+
+func TestCreateLinkValidationErrorFormat(t *testing.T) {
+	r := setup(t)
+
+	w := do(r, http.MethodPost, "/api/links", `{"original_url": "not-a-url"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", w.Code)
+	}
+	var resp map[string]map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp["errors"]["original_url"], "failed on the 'url' tag") {
+		t.Fatalf("unexpected error message: %s", w.Body)
+	}
+	// Имя поля должно быть из json-тега, а не Go-имя структуры.
+	if !strings.Contains(resp["errors"]["original_url"], "createLinkPayload.original_url") {
+		t.Fatalf("field name not json-tag based: %s", w.Body)
+	}
+}
+
+func TestCreateLinkInvalidJSON(t *testing.T) {
+	r := setup(t)
+
+	w := do(r, http.MethodPost, "/api/links", `not json`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["error"] != "invalid request" {
+		t.Fatalf("unexpected body: %s", w.Body)
+	}
+}
+
+func TestCreateLinkRelativeURLRejected(t *testing.T) {
+	r := setup(t)
+
+	for _, u := range []string{"example.com/path", "/relative", "ftp://files.io"} {
+		w := do(r, http.MethodPost, "/api/links", `{"original_url": "`+u+`"}`)
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("url %q: want 422, got %d", u, w.Code)
+		}
+	}
+}
+
+func TestCreateLinkShortNameTooShort(t *testing.T) {
+	r := setup(t)
+
+	w := do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io", "short_name": "go"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d: %s", w.Code, w.Body)
+	}
+	var resp map[string]map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if !strings.Contains(resp["errors"]["short_name"], "min") {
+		t.Fatalf("unexpected error: %s", w.Body)
 	}
 }
