@@ -164,11 +164,22 @@ func (p *Postgres) DeleteLink(ctx context.Context, id int64) (bool, error) {
 }
 
 func (p *Postgres) CreateVisit(ctx context.Context, v *Visit) error {
-	return p.pool.QueryRow(ctx,
-		`INSERT INTO link_visits (link_id, ip, user_agent, referer, status)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-		v.LinkID, v.IP, v.UserAgent, v.Referer, v.Status,
-	).Scan(&v.ID, &v.CreatedAt)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	row, err := p.q.AddVisit(ctx, sqlc.AddVisitParams{
+		LinkID:    v.LinkID,
+		Ip:        v.IP,
+		UserAgent: v.UserAgent,
+		Referer:   v.Referer,
+		Status:    int32(v.Status),
+	})
+	if err != nil {
+		return err
+	}
+	v.ID = row.ID
+	v.CreatedAt = row.CreatedAt
+	return nil
 }
 
 func (p *Postgres) CountVisits(ctx context.Context) (int64, error) {

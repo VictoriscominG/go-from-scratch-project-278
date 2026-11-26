@@ -7,15 +7,39 @@ package sqlc
 
 import (
 	"context"
+	"time"
 )
 
-const addVisit = `-- name: AddVisit :exec
-INSERT INTO link_visits (link_id) VALUES ($1)
+const addVisit = `-- name: AddVisit :one
+INSERT INTO link_visits (link_id, ip, user_agent, referer, status)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, created_at
 `
 
-func (q *Queries) AddVisit(ctx context.Context, linkID int64) error {
-	_, err := q.db.Exec(ctx, addVisit, linkID)
-	return err
+type AddVisitParams struct {
+	LinkID    int64
+	Ip        string
+	UserAgent string
+	Referer   string
+	Status    int32
+}
+
+type AddVisitRow struct {
+	ID        int64
+	CreatedAt time.Time
+}
+
+func (q *Queries) AddVisit(ctx context.Context, arg AddVisitParams) (AddVisitRow, error) {
+	row := q.db.QueryRow(ctx, addVisit,
+		arg.LinkID,
+		arg.Ip,
+		arg.UserAgent,
+		arg.Referer,
+		arg.Status,
+	)
+	var i AddVisitRow
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
 }
 
 const countLinks = `-- name: CountLinks :one

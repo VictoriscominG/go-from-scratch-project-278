@@ -28,8 +28,10 @@ RETURNING id, original_url, short_name, created_at;
 DELETE FROM links
 WHERE id = $1;
 
--- name: AddVisit :exec
-INSERT INTO link_visits (link_id) VALUES ($1);
+-- name: AddVisit :one
+INSERT INTO link_visits (link_id, ip, user_agent, referer, status)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, created_at;
 
 -- name: ListLinksPage :many
 SELECT id, original_url, short_name, created_at
