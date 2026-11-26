@@ -123,7 +123,7 @@ func (h *Handlers) ListLinks(c *gin.Context) {
 		return
 	}
 
-	limit, offset := -1, 0 // по умолчанию — все записи
+	limit, offset := 0, 0
 	rawRange := c.Query("range")
 	if rawRange != "" {
 		start, end, err := parseRange(rawRange)
@@ -135,6 +135,8 @@ func (h *Handlers) ListLinks(c *gin.Context) {
 			end = start + maxPageSize
 		}
 		limit, offset = int(end-start), int(start)
+	} else {
+		limit = int(total) // без range — все записи
 	}
 
 	links, err := h.store.ListLinks(c.Request.Context(), limit, offset)
@@ -163,7 +165,7 @@ func (h *Handlers) ListVisits(c *gin.Context) {
 		return
 	}
 
-	limit, offset := -1, 0
+	limit, offset := 0, 0
 	rawRange := c.Query("range")
 	if rawRange != "" {
 		start, end, err := parseRange(rawRange)
@@ -175,6 +177,8 @@ func (h *Handlers) ListVisits(c *gin.Context) {
 			end = start + maxPageSize
 		}
 		limit, offset = int(end-start), int(start)
+	} else {
+		limit = int(total) // без range — все записи
 	}
 
 	visits, err := h.store.ListVisits(c.Request.Context(), limit, offset)
