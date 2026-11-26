@@ -10,7 +10,7 @@ import (
 )
 
 const addVisit = `-- name: AddVisit :exec
-INSERT INTO visits (link_id) VALUES ($1)
+INSERT INTO link_visits (link_id) VALUES ($1)
 `
 
 func (q *Queries) AddVisit(ctx context.Context, linkID int64) error {
@@ -104,7 +104,7 @@ func (q *Queries) GetLinkByShortName(ctx context.Context, shortName string) (Lin
 const listLinks = `-- name: ListLinks :many
 SELECT id, original_url, short_name, created_at
 FROM links
-ORDER BY id
+ORDER BY id ASC
 `
 
 func (q *Queries) ListLinks(ctx context.Context) ([]Link, error) {
@@ -135,7 +135,7 @@ func (q *Queries) ListLinks(ctx context.Context) ([]Link, error) {
 const listLinksPage = `-- name: ListLinksPage :many
 SELECT id, original_url, short_name, created_at
 FROM links
-ORDER BY id
+ORDER BY id ASC
 LIMIT $2::int OFFSET $1::int
 `
 

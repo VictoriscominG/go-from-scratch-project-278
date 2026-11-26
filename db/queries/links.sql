@@ -6,7 +6,7 @@ RETURNING id, original_url, short_name, created_at;
 -- name: ListLinks :many
 SELECT id, original_url, short_name, created_at
 FROM links
-ORDER BY id;
+ORDER BY id ASC;
 
 -- name: GetLinkByID :one
 SELECT id, original_url, short_name, created_at
@@ -29,7 +29,7 @@ DELETE FROM links
 WHERE id = $1;
 
 -- name: AddVisit :exec
-INSERT INTO visits (link_id) VALUES ($1);
+INSERT INTO link_visits (link_id) VALUES ($1);
 
 -- name: ListLinksPage :many
 SELECT id, original_url, short_name, created_at
