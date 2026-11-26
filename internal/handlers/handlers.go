@@ -229,7 +229,7 @@ func (h *Handlers) DeleteLink(c *gin.Context) {
 
 	deleted, err := h.store.DeleteLink(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 	if !deleted {
@@ -242,12 +242,12 @@ func (h *Handlers) DeleteLink(c *gin.Context) {
 func (h *Handlers) Redirect(c *gin.Context) {
 	link, err := h.store.GetLinkByShortName(c.Request.Context(), c.Param("short_name"))
 	if errors.Is(err, storage.ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		respondNotFound(c)
 		return
 	}
 	if err != nil {
 		log.Printf("get link by short_name: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		respondInternal(c)
 		return
 	}
 
