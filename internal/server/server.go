@@ -25,6 +25,8 @@ func New(store storage.Store, baseURL string) *gin.Engine {
 		panic(fmt.Sprintf("invalid trusted proxies config: %v", err))
 	}
 
+	router.TrustedPlatform = gin.PlatformCloudflare
+
 	router.Use(cors.New(cors.Config{
 		AllowOrigins: allowedOrigins(),
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},

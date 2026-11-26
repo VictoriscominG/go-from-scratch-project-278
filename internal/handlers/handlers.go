@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -37,6 +36,7 @@ func (h *Handlers) Register(r *gin.Engine) {
 	r.GET("/api/links/:id", h.GetLink)
 	r.PUT("/api/links/:id", h.UpdateLink)
 	r.DELETE("/api/links/:id", h.DeleteLink)
+	r.GET("/api/link_visits", h.ListVisits) // ← новый
 	r.GET("/r/:short_name", h.Redirect)
 }
 
@@ -155,6 +155,44 @@ func (h *Handlers) ListLinks(c *gin.Context) {
 	c.JSON(http.StatusOK, h.respondList(links))
 }
 
+func (h *Handlers) ListVisits(c *gin.Context) {
+	total, err := h.store.CountVisits(c.Request.Context())
+	if err != nil {
+		log.Printf("count visits: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+
+	limit, offset := -1, 0
+	rawRange := c.Query("range")
+	if rawRange != "" {
+		start, end, err := parseRange(rawRange)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if end-start > maxPageSize {
+			end = start + maxPageSize
+		}
+		limit, offset = int(end-start), int(start)
+	}
+
+	visits, err := h.store.ListVisits(c.Request.Context(), limit, offset)
+	if err != nil {
+		log.Printf("list visits: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
+		return
+	}
+
+	rangeEnd := offset + limit
+	if limit < 0 || rangeEnd > int(total) {
+		rangeEnd = int(total)
+	}
+	c.Header("Content-Range", fmt.Sprintf("link_visits %d-%d/%d", offset, rangeEnd, total))
+
+	c.JSON(http.StatusOK, visits)
+}
+
 // GetLink — GET /api/links/:id.
 func (h *Handlers) GetLink(c *gin.Context) {
 	id, ok := h.parseID(c)
@@ -228,7 +266,6 @@ func (h *Handlers) DeleteLink(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Redirect — GET /:short_name.
 func (h *Handlers) Redirect(c *gin.Context) {
 	link, err := h.store.GetLinkByShortName(c.Request.Context(), c.Param("short_name"))
 	if errors.Is(err, storage.ErrNotFound) {
@@ -236,18 +273,25 @@ func (h *Handlers) Redirect(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		log.Printf("get link by short_name: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errInternal})
 		return
 	}
 
-	linkID := link.ID
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = h.store.AddVisit(ctx, linkID)
-	}()
+	status := http.StatusFound // 302
+	visit := storage.Visit{
+		LinkID:    link.ID,
+		IP:        c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
+		Referer:   c.GetHeader("Referer"),
+		Status:    status,
+	}
+	// Записываем визит до редиректа: после c.Redirect ответ уже уходит клиенту.
+	if err := h.store.CreateVisit(c.Request.Context(), &visit); err != nil {
+		log.Printf("create visit: %v", err) // сбой аналитики не ломает редирект
+	}
 
-	c.Redirect(http.StatusMovedPermanently, link.OriginalURL)
+	c.Redirect(status, link.OriginalURL)
 }
 
 func (h *Handlers) parseID(c *gin.Context) (int64, bool) {

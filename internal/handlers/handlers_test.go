@@ -20,13 +20,15 @@ import (
 
 // fakeStore — полная реализация storage.Store в памяти.
 type fakeStore struct {
-	mu     sync.Mutex
-	nextID int64
-	links  map[int64]storage.Link
+	mu          sync.Mutex
+	nextID      int64
+	links       map[int64]storage.Link
+	nextVisitID int64
+	visits      []storage.Visit
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{nextID: 1, links: make(map[int64]storage.Link)}
+	return &fakeStore{nextID: 1, nextVisitID: 1, links: make(map[int64]storage.Link)}
 }
 
 func (f *fakeStore) CreateLink(_ context.Context, originalURL, shortName string) (*storage.Link, error) {
@@ -120,8 +122,34 @@ func (f *fakeStore) DeleteLink(_ context.Context, id int64) (bool, error) {
 	return true, nil
 }
 
-func (f *fakeStore) AddVisit(_ context.Context, _ int64) error { return nil }
-func (f *fakeStore) Close()                                    {}
+func (f *fakeStore) CreateVisit(_ context.Context, v *storage.Visit) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v.ID = f.nextVisitID
+	f.nextVisitID++
+	v.CreatedAt = time.Now()
+	f.visits = append(f.visits, *v)
+	return nil
+}
+
+func (f *fakeStore) CountVisits(_ context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return int64(len(f.visits)), nil
+}
+
+func (f *fakeStore) ListVisits(_ context.Context, limit, offset int) ([]storage.Visit, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if limit < 0 {
+		return append([]storage.Visit{}, f.visits...), nil
+	}
+	lo := min(offset, len(f.visits))
+	hi := min(offset+limit, len(f.visits))
+	return append([]storage.Visit{}, f.visits[lo:hi]...), nil
+}
+
+func (f *fakeStore) Close() {}
 
 func setup(t *testing.T) *gin.Engine {
 	t.Helper()
@@ -323,10 +351,12 @@ func TestRedirect(t *testing.T) {
 	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "go"}`)
 
 	req := httptest.NewRequest(http.MethodGet, "/r/go", nil)
+	req.Header.Set("User-Agent", "test-agent/1.0")
+	req.Header.Set("Referer", "https://ref.io/page")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusMovedPermanently {
-		t.Fatalf("want 301, got %d", w.Code)
+	if w.Code != http.StatusFound { // теперь 302, не 301
+		t.Fatalf("want 302, got %d", w.Code)
 	}
 	if loc := w.Header().Get("Location"); loc != "https://a.io/target" {
 		t.Fatalf("unexpected Location: %s", loc)
@@ -445,5 +475,102 @@ func TestListLinksPageSizeCapped(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if len(resp) > maxPageSize {
 		t.Fatalf("page size not capped: %d", len(resp))
+	}
+}
+
+func getVisits(t *testing.T, r *gin.Engine) []storage.Visit {
+	t.Helper()
+	w := do(r, http.MethodGet, "/api/link_visits", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var visits []storage.Visit
+	if err := json.Unmarshal(w.Body.Bytes(), &visits); err != nil {
+		t.Fatal(err)
+	}
+	return visits
+}
+
+func TestRedirectRecordsVisit(t *testing.T) {
+	r := setup(t)
+	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/target", "short_name": "go"}`)
+
+	req := httptest.NewRequest(http.MethodGet, "/r/go", nil)
+	req.Header.Set("User-Agent", "test-agent/1.0")
+	req.Header.Set("Referer", "https://ref.io/page")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	visits := getVisits(t, r)
+	if len(visits) != 1 {
+		t.Fatalf("want 1 visit, got %d", len(visits))
+	}
+	v := visits[0]
+	if v.LinkID != 1 {
+		t.Fatalf("want link_id=1, got %d", v.LinkID)
+	}
+	if v.UserAgent != "test-agent/1.0" {
+		t.Fatalf("unexpected user_agent: %q", v.UserAgent)
+	}
+	if v.Referer != "https://ref.io/page" {
+		t.Fatalf("unexpected referer: %q", v.Referer)
+	}
+	if v.Status != http.StatusFound {
+		t.Fatalf("want status=302, got %d", v.Status)
+	}
+	if v.CreatedAt.IsZero() {
+		t.Fatal("created_at must be set")
+	}
+}
+
+func TestRedirectNotFoundDoesNotRecordVisit(t *testing.T) {
+	r := setup(t)
+
+	if w := do(r, http.MethodGet, "/r/missing", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+
+	visits := getVisits(t, r)
+	if len(visits) != 0 {
+		t.Fatalf("visit must not be recorded on 404, got %d", len(visits))
+	}
+}
+
+func TestListVisitsPagination(t *testing.T) {
+	r := setup(t)
+	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/x", "short_name": "aaa"}`)
+
+	// Три визита по трём редиректам.
+	for i := 0; i < 3; i++ {
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/r/aaa", nil))
+	}
+
+	w := do(r, http.MethodGet, "/api/link_visits?range=[1,3]", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if cr := w.Header().Get("Content-Range"); cr != "link_visits 1-3/3" {
+		t.Fatalf("unexpected Content-Range: %q", cr)
+	}
+	var visits []storage.Visit
+	if err := json.Unmarshal(w.Body.Bytes(), &visits); err != nil {
+		t.Fatal(err)
+	}
+	if len(visits) != 2 {
+		t.Fatalf("want 2 visits, got %d", len(visits))
+	}
+	if visits[0].ID != 2 || visits[1].ID != 3 {
+		t.Fatalf("unexpected page: first ID=%d, last ID=%d", visits[0].ID, visits[1].ID)
+	}
+}
+
+func TestListVisitsInvalidRange(t *testing.T) {
+	r := setup(t)
+
+	if w := do(r, http.MethodGet, "/api/link_visits?range=%5B10,5%5D", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("end <= start: want 400, got %d", w.Code)
+	}
+	if w := do(r, http.MethodGet, "/api/link_visits?range=%5B5%5D", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("single value: want 400, got %d", w.Code)
 	}
 }

@@ -163,11 +163,39 @@ func (p *Postgres) DeleteLink(ctx context.Context, id int64) (bool, error) {
 	return rows > 0, nil
 }
 
-func (p *Postgres) AddVisit(ctx context.Context, linkID int64) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+func (p *Postgres) CreateVisit(ctx context.Context, v *Visit) error {
+	return p.pool.QueryRow(ctx,
+		`INSERT INTO link_visits (link_id, ip, user_agent, referer, status)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
+		v.LinkID, v.IP, v.UserAgent, v.Referer, v.Status,
+	).Scan(&v.ID, &v.CreatedAt)
+}
 
-	return p.q.AddVisit(ctx, linkID)
+func (p *Postgres) CountVisits(ctx context.Context) (int64, error) {
+	var n int64
+	err := p.pool.QueryRow(ctx, `SELECT count(*) FROM link_visits`).Scan(&n)
+	return n, err
+}
+
+func (p *Postgres) ListVisits(ctx context.Context, limit, offset int) ([]Visit, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, link_id, created_at, ip, user_agent, referer, status
+		 FROM link_visits ORDER BY id LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	visits := make([]Visit, 0, limit)
+	for rows.Next() {
+		var v Visit
+		if err := rows.Scan(&v.ID, &v.LinkID, &v.CreatedAt,
+			&v.IP, &v.UserAgent, &v.Referer, &v.Status); err != nil {
+			return nil, err
+		}
+		visits = append(visits, v)
+	}
+	return visits, rows.Err()
 }
 
 func (p *Postgres) Close() {
