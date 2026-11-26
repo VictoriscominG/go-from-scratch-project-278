@@ -475,16 +475,26 @@ func TestListLinksInvalidRange(t *testing.T) {
 
 func TestListLinksPageSizeCapped(t *testing.T) {
 	r := setup(t)
-	createN(t, r, 10)
+
+	createN(t, r, 105)
 
 	w := do(r, http.MethodGet, "/api/links?range=[0,500]", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
+	if cr := w.Header().Get("Content-Range"); cr != "links 0-100/105" {
+		t.Fatalf("unexpected Content-Range: %q", cr)
+	}
 	var resp []linkResponse
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if len(resp) > maxPageSize {
-		t.Fatalf("page size not capped: %d", len(resp))
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp) != maxPageSize {
+		t.Fatalf("want page capped at %d, got %d", maxPageSize, len(resp))
+	}
+	// Кап обрезает страницу, но не сдвигает начало: первые ID идут по порядку.
+	if resp[0].ID != 1 || resp[99].ID != 100 {
+		t.Fatalf("unexpected page content: first ID=%d, last ID=%d", resp[0].ID, resp[99].ID)
 	}
 }
 
@@ -524,6 +534,9 @@ func TestRedirectRecordsVisit(t *testing.T) {
 	}
 	if v.Referer != "https://ref.io/page" {
 		t.Fatalf("unexpected referer: %q", v.Referer)
+	}
+	if v.IP != "192.0.2.1" {
+		t.Errorf("visit ip = %q, want 192.0.2.1", v.IP)
 	}
 	if v.Status != http.StatusFound {
 		t.Fatalf("want status=302, got %d", v.Status)
@@ -599,9 +612,12 @@ func TestCreateLinkValidationErrorFormat(t *testing.T) {
 	if !strings.Contains(resp["errors"]["original_url"], "failed on the 'url' tag") {
 		t.Fatalf("unexpected error message: %s", w.Body)
 	}
-	// Имя поля должно быть из json-тега, а не Go-имя структуры.
-	if !strings.Contains(resp["errors"]["original_url"], "createLinkPayload.original_url") {
+
+	if resp["errors"]["original_url"] == "" {
 		t.Fatalf("field name not json-tag based: %s", w.Body)
+	}
+	if _, hasGoName := resp["errors"]["OriginalURL"]; hasGoName {
+		t.Fatalf("Go field name leaked into error: %s", w.Body)
 	}
 }
 
