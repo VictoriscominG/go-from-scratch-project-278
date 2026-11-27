@@ -2,6 +2,7 @@
 .env
 node_modules
 frontend/node_modules
-bin/
+bin/*
+!bin/run.sh
 coverage.out
 Dockerfile.legacy
