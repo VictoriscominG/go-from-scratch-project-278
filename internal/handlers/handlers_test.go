@@ -659,3 +659,41 @@ func TestCreateLinkShortNameTooShort(t *testing.T) {
 		t.Fatalf("unexpected error: %s", w.Body)
 	}
 }
+
+func TestListVisitsRangeHeader(t *testing.T) {
+	r := setup(t)
+	do(r, http.MethodPost, "/api/links", `{"original_url": "https://a.io/x", "short_name": "aaa"}`)
+
+	for i := 0; i < 3; i++ {
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/r/aaa", nil))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/link_visits", nil)
+	req.Header.Set("Range", "[1,3]")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if cr := w.Header().Get("Content-Range"); cr != "link_visits 1-3/3" {
+		t.Fatalf("unexpected Content-Range: %q", cr)
+	}
+}
+
+func TestListLinksRangeBeyondTotal(t *testing.T) {
+	r := setup(t)
+	createN(t, r, 5)
+
+	w := do(r, http.MethodGet, "/api/links?range=%5B100,200%5D", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if cr := w.Header().Get("Content-Range"); cr != "links */5" {
+		t.Fatalf("unexpected Content-Range: %q", cr)
+	}
+	var resp []linkResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp) != 0 {
+		t.Fatalf("want empty page, got %d items", len(resp))
+	}
+}

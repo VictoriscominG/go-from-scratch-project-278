@@ -8,9 +8,9 @@
 Приложение развернуто на Render:  
 👉 [go-from-scratch-project-278-0b05.onrender.com](https://go-from-scratch-project-278-0b05.onrender.com)
 
-Доступные эндпоинты:
-- `GET /ping` — проверка доступности (ожидается `pong`)
-- `GET /debug/sentry` — тестовая отправка ошибки в Sentry (работает только при `SENTRY_DEBUG=on`)
+## Описание
+
+Сервис сокращения ссылок: превращает длинный URL в короткое имя и перенаправляет по нему, собирая статистику переходов.
 
 
 Спроектируйте приложение для удобных ссылок
@@ -20,20 +20,73 @@
 
 ## Стек
 
-- Go
+- Go + Gin — HTTP-сервер и маршрутизация
+- PostgreSQL + pgx, SQL-запросы генерируются sqlc
+- Миграции — goose
+- Фронтенд — готовый пакет @hexlet/project-url-shortener-frontend, раздаётся Caddy
+- Sentry — мониторинг ошибок
+- Docker + Render — сборка и деплой
+- CI — GitHub Actions: тесты с -race, golangci-lint, сборка
+
+
+## API
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | /ping | health-check, возвращает `pong` |
+| POST | /api/links | создание ссылки |
+| GET | /api/links | список ссылок с пагинацией |
+| GET | /api/links/:id | ссылка по id |
+| PUT | /api/links/:id | обновление ссылки |
+| DELETE | /api/links/:id | удаление ссылки |
+| GET | /r/:short_name | редирект на исходный URL |
+| GET | /api/link_visits | список переходов с пагинацией |
+
+
+## Использование
+
+```bash
+# Создать ссылку
+curl -X POST https://go-from-scratch-project-278-0b05.onrender.com/api/links \
+  -H "Content-Type: application/json" \
+  -d '{"original_url": "https://example.com/long-url", "short_name": "exmpl"}'
+
+# Список с пагинацией
+curl -i "https://go-from-scratch-project-278-0b05.onrender.com/api/links?range=[0,10]"
+# → Content-Range: links 0-10/42
+
+# Редирект по короткому имени
+curl -i https://go-from-scratch-project-278-0b05.onrender.com/r/exmpl
+
+```
+## Переменные окружения
+
+| Переменная | Обязательна | Назначение |
+|---|---|---|
+| `DATABASE_URL` | да | строка подключения к PostgreSQL |
+| `PORT` | нет | порт приложения, по умолчанию 8080 |
+| `BASE_URL` | нет | базовый адрес для short_url; на Render — публичный HTTPS-адрес |
+| `SENTRY_DSN` | нет | DSN Sentry; без него мониторинг отключён |
+| `SENTRY_DEBUG` | нет | `on` — включает тестовый маршрут /debug/sentry |
+
 
 ## Установка
-
-<!-- Опишите установку: клонирование, зависимости, переменные окружения -->
 
 ```bash
 git clone https://github.com/VictoriscominG/go-from-scratch-project-278.git
 cd go-from-scratch-project-278
+go mod download
+
+# переменные окружения (например, через .env — godotenv подхватит его)
+export DATABASE_URL=postgres://postgres:password@localhost:5432/appdb?sslmode=disable
+
+# миграции
+goose -dir ./db/migrations postgres "$DATABASE_URL" up
+
+# запуск
+go run main.go
+
 ```
-
-## Использование
-
-<!-- Добавьте примеры запуска и запись asciinema — именно это смотрит работодатель -->
 
 ---
 
