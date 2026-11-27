@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # 3) Runtime
 FROM alpine:3.22
 
-RUN apk add --no-cache bash ca-certificates caddy libcap tzdata \
+RUN apk add --no-cache bash ca-certificates caddy tzdata \
   && addgroup -S app && adduser -S -G app app
 
 WORKDIR /app
@@ -45,11 +45,10 @@ RUN chmod +x /app/bin/run.sh
 
 COPY Caddyfile /etc/caddy/Caddyfile
 
-RUN chown -R app:app /app && setcap 'cap_net_bind_service=+ep' "$(command -v caddy)"
+RUN chown -R app:app /app
 
 USER app
 
 EXPOSE 80
 
 CMD ["/app/bin/run.sh"]
-
