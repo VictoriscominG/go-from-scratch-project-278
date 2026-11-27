@@ -350,6 +350,9 @@ func (h *Handlers) validateURL(c *gin.Context, raw string) bool {
 func resolvePaging(c *gin.Context, total int64) (limit, offset int, ok bool) {
 	rawRange := c.Query("range")
 	if rawRange == "" {
+		rawRange = c.GetHeader("Range")
+	}
+	if rawRange == "" {
 		return int(total), 0, true // без range — все записи
 	}
 
@@ -358,6 +361,9 @@ func resolvePaging(c *gin.Context, total int64) (limit, offset int, ok bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return 0, 0, false
 	}
+	if int64(start) >= total {
+		return 0, int(start), true // пустое окно
+	}
 	if end-start > maxPageSize {
 		end = start + maxPageSize
 	}
@@ -365,10 +371,15 @@ func resolvePaging(c *gin.Context, total int64) (limit, offset int, ok bool) {
 }
 
 // setContentRange ставит заголовок Content-Range: "<resource> start-end/total".
-// Конец диапазона — запрошенный end либо фактический total.
+// Если окно пустое или запрошенный диапазон за пределами total,
+// используется формат RFC 9110: "<resource> */total".
 func setContentRange(c *gin.Context, resource string, offset, limit, total int) {
+	if limit <= 0 || offset >= total {
+		c.Header("Content-Range", fmt.Sprintf("%s */%d", resource, total))
+		return
+	}
 	rangeEnd := offset + limit
-	if limit < 0 || rangeEnd > total {
+	if rangeEnd > total {
 		rangeEnd = total
 	}
 	c.Header("Content-Range", fmt.Sprintf("%s %d-%d/%d", resource, offset, rangeEnd, total))

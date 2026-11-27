@@ -183,30 +183,36 @@ func (p *Postgres) CreateVisit(ctx context.Context, v *Visit) error {
 }
 
 func (p *Postgres) CountVisits(ctx context.Context) (int64, error) {
-	var n int64
-	err := p.pool.QueryRow(ctx, `SELECT count(*) FROM link_visits`).Scan(&n)
-	return n, err
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return p.q.CountVisits(ctx)
 }
 
 func (p *Postgres) ListVisits(ctx context.Context, limit, offset int) ([]Visit, error) {
-	rows, err := p.pool.Query(ctx,
-		`SELECT id, link_id, created_at, ip, user_agent, referer, status
-		 FROM link_visits ORDER BY id LIMIT $1 OFFSET $2`, limit, offset)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := p.q.ListVisitsPage(ctx, sqlc.ListVisitsPageParams{
+		PageSize:  int32(limit),
+		PageStart: int32(offset),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	visits := make([]Visit, 0, limit)
-	for rows.Next() {
-		var v Visit
-		if err := rows.Scan(&v.ID, &v.LinkID, &v.CreatedAt,
-			&v.IP, &v.UserAgent, &v.Referer, &v.Status); err != nil {
-			return nil, err
-		}
-		visits = append(visits, v)
+	out := make([]Visit, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Visit{
+			ID:        r.ID,
+			LinkID:    r.LinkID,
+			CreatedAt: r.CreatedAt,
+			IP:        r.Ip,
+			UserAgent: r.UserAgent,
+			Referer:   r.Referer,
+			Status:    int(r.Status),
+		})
 	}
-	return visits, rows.Err()
+	return out, nil
 }
 
 func (p *Postgres) Close() {
