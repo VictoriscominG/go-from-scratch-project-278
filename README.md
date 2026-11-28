@@ -52,13 +52,36 @@ curl -X POST https://go-from-scratch-project-278-0b05.onrender.com/api/links \
   -d '{"original_url": "https://example.com/long-url", "short_name": "exmpl"}'
 
 # Список с пагинацией
-curl -i "https://go-from-scratch-project-278-0b05.onrender.com/api/links?range=[0,10]"
+curl -g -i "https://go-from-scratch-project-278-0b05.onrender.com/api/links?range=[0,10]"
 # → Content-Range: links 0-10/42
+
+# Получить ссылку по id
+curl -s https://go-from-scratch-project-278-0b05.onrender.com/api/links/1 | jq
+
+# Обновить (URL и/или короткое имя)
+curl -X PUT https://go-from-scratch-project-278-0b05.onrender.com/api/links/1 \
+  -H "Content-Type: application/json" \
+  -d '{"original_url": "https://example.com/new", "short_name": "exmpl2"}'
+
+# Удалить
+curl -i -X DELETE https://go-from-scratch-project-278-0b05.onrender.com/api/links/1
+# → 204 No Content
 
 # Редирект по короткому имени
 curl -i https://go-from-scratch-project-278-0b05.onrender.com/r/exmpl
+# → 302 Found, Location: https://example.com/long-url
+
+# История визитов по ссылке
+curl -g -i "https://go-from-scratch-project-278-0b05.onrender.com/api/link_visits?range=[0,10]"
 
 ```
+
+## Демонстрация работы
+Посмотрите интерактивную запись терминала с примерами использования:
+
+[![Демонстрация GetPathSize](https://asciinema.org/a/WpCPyWYZofmh2aN1.svg)](https://asciinema.org/a/WpCPyWYZofmh2aN1)
+
+
 ## Переменные окружения
 
 | Переменная | Обязательна | Назначение |
